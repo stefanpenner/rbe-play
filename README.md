@@ -2,6 +2,8 @@
 
 Tiny end-to-end Bazel remote execution using Bazel's built-in worker. No Docker, no scheduler, no registration.
 
+See [TUTORIAL.md](TUTORIAL.md) for the step-by-step from irreducible core to working worker.
+
 ## Diagram
 
 ```
