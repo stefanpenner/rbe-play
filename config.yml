@@ -1,0 +1,21 @@
+digestFunction: SHA256
+defaultActionTimeout: 600
+maximumActionTimeout: 3600
+
+backplane:
+  redisUri: redis://redis:6379
+  queues:
+    - name: cpu
+      allowUnmatched: true
+
+server:
+  port: 8980
+  name: server
+
+worker:
+  port: 8981
+  publicName: worker:8981
+  capabilities:
+    execution: true
+    cas: true
+  root: /tmp/worker

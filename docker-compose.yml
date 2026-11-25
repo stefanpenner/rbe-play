@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    image: bazelbuild/buildfarm-server:latest
+    command: /config/config.yml
+    volumes:
+      - ./config.yml:/config/config.yml:ro
+    ports:
+      - "8980:8980"
+    depends_on:
+      - redis
+
+  worker:
+    image: bazelbuild/buildfarm-worker:latest
+    command: /config/config.yml
+    volumes:
+      - ./config.yml:/config/config.yml:ro
+    depends_on:
+      - server
+    environment:
+      - BF_PROMETHEUS_PORT=9091
