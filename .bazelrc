@@ -1,5 +1,3 @@
-build:remote --remote_executor=grpc://localhost:8980
-build:remote --remote_cache=grpc://localhost:8980
+build:remote --remote_executor=grpc://localhost:8080
+build:remote --remote_cache=grpc://localhost:8080
 build:remote --spawn_strategy=remote,local
-build:remote --extra_execution_platforms=//platforms:linux
-build:remote --platforms=//platforms:linux
