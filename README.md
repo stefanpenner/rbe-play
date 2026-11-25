@@ -1,26 +1,48 @@
 # rbe-play
 
-Tiny end-to-end Bazel RBE. Local workers register automatically.
+Tiny end-to-end Bazel remote execution using Bazel's built-in worker. No Docker, no scheduler, no registration.
 
-## Run
+## Diagram
+
+```
++----------------+     gRPC      +------------------+
+| Bazel client   | ------------> | remote worker    |
+| (this repo)    | <------------ | (Bazel source)   |
+| localhost      |   results     | localhost:8080   |
++----------------+               +------------------+
+```
+
+## Setup (one-time)
+
+Clone Bazel source and build the worker:
 
 ```bash
-docker compose up -d
-# wait ~10s for worker to register
+git clone --depth=1 https://github.com/bazelbuild/bazel.git
+cd bazel
+bazel build //src/tools/remote:worker
+mkdir -p /tmp/rbe/work /tmp/rbe/cas
+```
+
+## Run the worker
+
+```bash
+# from the bazel checkout
+bazel-bin/src/tools/remote/worker \
+  --work_path=/tmp/rbe/work \
+  --cas_path=/tmp/rbe/cas \
+  --listen_port=8080
+```
+
+## Build remotely
+
+In this repo:
+
+```bash
 bazel build //:hello --config=remote
 ```
 
-You should see `1 remote` in the process summary.
+Output should contain `1 remote`.
 
-## How it works
+## What it is
 
-- `docker compose` starts Redis + Buildfarm server + worker
-- Worker registers with the server on startup (advertises platform properties)
-- Bazel client (on your machine) sends actions to `grpc://localhost:8980`
-- Server matches actions to the registered worker via `exec_properties`
-
-## Platforms
-
-See `platforms/BUILD`. The Linux platform matches the local worker.
-
-To add more platforms later: start another worker with different properties, add a matching `platform()`.
+Single process that implements the Remote Execution API. Bazel client sends actions directly to it. No platforms, no pools, no multi-worker scheduling.
