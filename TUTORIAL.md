@@ -143,3 +143,98 @@ bazel build //:hello \
 The official Bazel worker already is that working worker.  
 The tutorial above is the map from the irreducible protocol surface to that implementation.  
 Once you have the official worker running against this repo’s `//:hello`, you have the complete end-to-end system.
+
+---
+
+## Next concrete pieces
+
+### Exact Capabilities response Bazel accepts
+
+```js
+async getCapabilities(call) {
+  return {
+    cacheCapabilities: {
+      digestFunctions: ['SHA256'],
+      actionCacheUpdateCapabilities: { updateEnabled: true },
+      maxBatchTotalSizeBytes: 4 * 1024 * 1024,
+      symlinkAbsolutePathStrategy: 'ALLOWED'
+    },
+    executionCapabilities: {
+      digestFunction: 'SHA256',
+      execEnabled: true
+    },
+    lowApiVersion: { major: 2, minor: 0 },
+    highApiVersion: { major: 2, minor: 3 }
+  };
+}
+```
+
+### Minimal ByteStream resource-name parsing
+
+```js
+function parseBlobResource(name) {
+  // download: [instance/]blobs/{hash}/{size}
+  // upload:   [instance/]uploads/{uuid}/blobs/{hash}/{size}
+  const parts = name.split('/');
+  const blobsIdx = parts.lastIndexOf('blobs');
+  if (blobsIdx < 0 || blobsIdx + 2 >= parts.length) return null;
+  return {
+    hash: parts[blobsIdx + 1],
+    size: Number(parts[blobsIdx + 2])
+  };
+}
+
+// Read
+async read(call) {
+  const { hash } = parseBlobResource(call.request.resourceName) || {};
+  const data = cas.get(hash);
+  if (!data) { call.emit('error', { code: 5 }); return; }
+  call.write({ data });
+  call.end();
+}
+
+// Write (client streaming)
+async write(call) {
+  let hash, chunks = [];
+  for await (const req of call) {
+    if (!hash) ({ hash } = parseBlobResource(req.resourceName) || {});
+    chunks.push(req.data);
+  }
+  if (hash) cas.set(hash, Buffer.concat(chunks));
+  call.end();
+}
+```
+
+### Skeleton Execute that materializes one flat file and runs it
+
+```js
+async execute(call) {
+  const actionHash = call.request.actionDigest.hash;
+  const action = decode(cas.get(actionHash));          // Action proto
+  const command = decode(cas.get(action.commandDigest.hash));
+
+  const workDir = fs.mkdtempSync(path.join(this.workPath, 'a-'));
+
+  // simplest case: single file at input root
+  const root = decode(cas.get(action.inputRootDigest.hash)); // Directory
+  for (const f of root.files || []) {
+    const bytes = cas.get(f.digest.hash);
+    fs.writeFileSync(path.join(workDir, f.name), bytes);
+    if (f.isExecutable) fs.chmodSync(path.join(workDir, f.name), 0o755);
+  }
+
+  const { code, stdout, stderr } = await this.run(command, workDir);
+
+  // upload stdout/stderr + declared outputs (omitted)
+  const result = { exitCode: code, stdoutRaw: Buffer.from(stdout), stderrRaw: Buffer.from(stderr) };
+
+  call.write({
+    name: crypto.randomUUID(),
+    done: true,
+    response: { typeUrl: 'type.googleapis.com/build.bazel.remote.execution.v2.ExecuteResponse', value: encode({ result }) }
+  });
+  call.end();
+}
+```
+
+These three pieces are the next irreducible layer after the service list. The official worker implements exactly this flow (plus tree walking and proper proto encoding).
